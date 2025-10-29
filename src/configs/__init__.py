@@ -1,0 +1,1 @@
+from .cloudinary_config import init_cloudinary
