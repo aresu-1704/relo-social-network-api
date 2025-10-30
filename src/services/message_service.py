@@ -226,13 +226,9 @@ class MessageService:
                 if not participants_to_notify:
                     return
                 
-                # TẠM BỎ: Gửi push notification cho tất cả users (kể cả đang online)
-                # offline_user_ids = manager.get_offline_users(participants_to_notify)
-                # if not offline_user_ids:
-                #     return
-                
-                # Gửi cho tất cả participants (không phân biệt online/offline)
-                offline_user_ids = participants_to_notify
+                offline_user_ids = manager.get_offline_users(participants_to_notify)
+                if not offline_user_ids:
+                    return
                 
                 # Lấy thông tin sender để hiển thị
                 sender_name = "Người dùng"  # Default
@@ -259,27 +255,21 @@ class MessageService:
                         except:
                             pass
                 
-                # Lấy message content và image URL để hiển thị
+                # Lấy message content
                 message_content = ""
                 message_type = "text"
-                image_url = None
+
                 if isinstance(message.content, dict):
                     content_type = message.content.get("type", "text")
                     message_type = content_type
                     if content_type == "text":
                         message_content = message.content.get("text", "")
-                    elif content_type == "image":
-                        message_content = "📷 Đã gửi ảnh"
-                        image_url = message.content.get("url")
                     elif content_type == "media":
-                        message_content = "🖼️ Đã gửi media"
-                        urls = message.content.get("urls", [])
-                        if urls:
-                            image_url = urls[0]  # Lấy ảnh đầu tiên
+                        message_content = "[Media] Đã gửi đa phương tiện"
                     elif content_type == "audio":
-                        message_content = "🎤 Đã gửi tin nhắn thoại"
+                        message_content = "[Voice Message] Đã gửi tin nhắn thoại"
                     elif content_type == "file":
-                        message_content = "📁 Đã gửi file"
+                        message_content = "[File] Đã gửi file"
                     else:
                         message_content = "Đã gửi tin nhắn"
                 
