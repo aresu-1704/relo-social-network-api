@@ -26,3 +26,4 @@ from .message_schema import (
 from .post_schema import PostCreate, PostPublic, ReactionCreate
 from .user_schema import FriendRequestCreate, FriendRequestResponse, FriendRequestPublic, UserUpdate, UserSearchResult
 from .block_schema import BlockUserRequest
+from .comment_schema import CommentCreate, CommentPublic
