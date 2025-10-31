@@ -13,7 +13,7 @@ app = FastAPI(
     description="Backend mạng xã hội nhắn tin trực tuyến **Relo**.\n\n"
                 "Hệ thống hỗ trợ đăng ký, đăng nhập, kết bạn, nhắn tin thời gian thực "
                 "và quản lý bài viết cá nhân.",
-    version="1.1.301025"
+    version="1.1.311025"
 )
 
 # Kết nối với cơ sở dữ liệu khi khởi động

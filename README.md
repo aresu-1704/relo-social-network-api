@@ -103,8 +103,6 @@ HOST=0.0.0.0
 PORT=8000
 ```
 
-**Lưu ý**: File `relo-api.json` là Firebase service account key. Cần import vào Google Cloud Console để sử dụng FCM.
-
 ### 5. Chạy ứng dụng
 
 **Windows:**
@@ -123,60 +121,6 @@ uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Server sẽ chạy tại: `http://localhost:8000`
-
-## ☁️ Deploy lên Vercel
-
-### Yêu cầu
-
-- Tài khoản Vercel
-- MongoDB Atlas (hoặc MongoDB cloud khác)
-- Các biến môi trường đã được cấu hình
-
-### Các bước deploy
-
-1. **Cài đặt Vercel CLI (nếu chưa có):**
-```bash
-npm i -g vercel
-```
-
-2. **Đăng nhập Vercel:**
-```bash
-vercel login
-```
-
-3. **Deploy:**
-```bash
-vercel
-```
-
-4. **Deploy production:**
-```bash
-vercel --prod
-```
-
-### Cấu hình Environment Variables trên Vercel
-
-Sau khi deploy, vào Vercel Dashboard → Project Settings → Environment Variables và thêm các biến sau:
-
-```
-MONGO_URI=mongodb+srv://...
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-CLOUDINARY_CLOUD_NAME=dxusasr4c
-CLOUDINARY_API_KEY=882845991834671
-CLOUDINARY_API_SECRET=TBeB6Fca3ozXAyQYTaLcN8DvKY8
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
-FCM_SERVER_KEY=your-fcm-server-key
-FCM_PROJECT_ID=relo-e6b93
-```
-
-**Lưu ý:**
-- Vercel không hỗ trợ WebSocket, nên endpoint `/websocket` sẽ không hoạt động trên Vercel
-- Nên sử dụng MongoDB Atlas (cloud MongoDB) thay vì MongoDB local
-- Upload file `relo-api.json` vào Vercel hoặc sử dụng environment variables thay thế
 
 ## 📚 API Documentation
 
@@ -322,4 +266,4 @@ Nếu có câu hỏi hoặc cần hỗ trợ, vui lòng mở một Issue trên G
 
 ---
 
-**Phiên bản**: 1.0.161025
+**Phiên bản**: 1.1.301025

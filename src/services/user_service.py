@@ -341,6 +341,19 @@ class UserService:
             blocked_user.friendIds.remove(user_id)
             await blocked_user.save()
 
+        # Xóa tất cả lời mời kết bạn giữa 2 người dùng nếu có (cả 2 hướng)
+        friend_requests = await FriendRequest.find({
+            "$or": [
+                {"fromUserId": user_id, "toUserId": block_user_id},
+                {"fromUserId": block_user_id, "toUserId": user_id}
+            ],
+            "status": {"$in": ["pending", "accepted"]}
+        }).to_list()
+        
+        # Xóa tất cả friend requests tìm được
+        for request in friend_requests:
+            await request.delete()
+
         # Broadcast notification đến cả hai user
         # Gửi cho người chặn
         notification_payload_blocker = {
@@ -438,24 +451,26 @@ class UserService:
             if is_friend:
                 friend_status = 'friends'
             else:
-                # Check pending requests
+                # Check pending requests - check both simultaneously
+                # Priority: pending_received > pending_sent
                 sent_request = await FriendRequest.find_one({
                     "fromUserId": current_user_id_str,
                     "toUserId": user_id_str,
                     "status": "pending"
                 })
-                if sent_request:
+                received_request = await FriendRequest.find_one({
+                    "fromUserId": user_id_str,
+                    "toUserId": current_user_id_str,
+                    "status": "pending"
+                })
+                
+                # If user sent request to me, it's pending_received (more important)
+                if received_request:
+                    friend_status = 'pending_received'
+                elif sent_request:
                     friend_status = 'pending_sent'
                 else:
-                    received_request = await FriendRequest.find_one({
-                        "fromUserId": user_id_str,
-                        "toUserId": current_user_id_str,
-                        "status": "pending"
-                    })
-                    if received_request:
-                        friend_status = 'pending_received'
-                    else:
-                        friend_status = 'none'
+                    friend_status = 'none'
             
             # Store with status
             user_data = {
