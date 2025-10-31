@@ -63,6 +63,23 @@ class UserService:
             manager.broadcast_to_user(to_user_id, notification_payload)
         )
 
+        # Gửi push notification cho friend request
+        async def send_friend_request_notification():
+            try:
+                from ..services.fcm_service import FCMService
+                sender_name = from_user.displayName or from_user.username
+                await FCMService.send_friend_request_notification(
+                    from_user_id=str(from_user.id),
+                    from_user_name=sender_name,
+                    from_user_avatar=from_user.avatarUrl,
+                    to_user_id=to_user_id
+                )
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+        
+        asyncio.create_task(send_friend_request_notification())
+
         return new_request
 
     @staticmethod
@@ -159,31 +176,8 @@ class UserService:
             )
 
         elif response == 'reject':
-            # Từ chối yêu cầu - xóa khỏi database
+            # Từ chối yêu cầu - chỉ xóa khỏi database, không gửi thông báo
             await friend_request.delete()
-            
-            # Tạo notification cho người gửi yêu cầu (người bị từ chối)
-            to_user = await User.get(friend_request.toUserId)
-            await NotificationService.create_notification(
-                user_id=friend_request.fromUserId,
-                notification_type="friend_request_rejected",
-                title="Đã từ chối lời mời kết bạn",
-                message=f"{to_user.displayName} đã từ chối lời mời kết bạn của bạn",
-                metadata={"userId": str(to_user.id), "displayName": to_user.displayName, "avatarUrl": to_user.avatarUrl}
-            )
-            
-            # Broadcast notification đến người gửi yêu cầu
-            from_user = await User.get(friend_request.fromUserId)
-            if from_user:
-                notification_payload = {
-                    "type": "friend_request_declined",
-                    "payload": {
-                        "user_id": str(friend_request.toUserId)
-                    }
-                }
-                asyncio.create_task(
-                    manager.broadcast_to_user(friend_request.fromUserId, notification_payload)
-                )
         else:
             raise ValueError("Phản hồi không hợp lệ. Phải là 'accept' hoặc 'reject'.")
         

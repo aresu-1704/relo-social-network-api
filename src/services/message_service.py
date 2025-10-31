@@ -214,7 +214,8 @@ class MessageService:
         ]
         await asyncio.gather(*tasks)
 
-        # Gửi push notification cho users offline không tắt thông báo
+        # Gửi push notification cho tất cả users (không tắt thông báo, không phải sender)
+        # Client sẽ tự quyết định hiển thị hay không dựa trên app state
         async def send_push_notifications():
             try:
                 # Lấy danh sách participants không tắt thông báo và không phải sender
@@ -226,12 +227,12 @@ class MessageService:
                 if not participants_to_notify:
                     return
                 
-                offline_user_ids = manager.get_offline_users(participants_to_notify)
-                if not offline_user_ids:
-                    return
+                # Gửi cho TẤT CẢ users (không chỉ offline)
+                # Client sẽ tự quyết định hiển thị notification dựa trên app state
+                user_ids_to_notify = participants_to_notify
                 
                 # Lấy thông tin sender để hiển thị
-                sender_name = "Người dùng"  # Default
+                sender_name = "Người dùng không xác định"
                 sender_avatar = None
                 if sender and not is_sender_deleted:
                     sender_name = sender.displayName or sender.username
@@ -258,6 +259,7 @@ class MessageService:
                 # Lấy message content
                 message_content = ""
                 message_type = "text"
+                image_url = None  # Khởi tạo image_url
 
                 if isinstance(message.content, dict):
                     content_type = message.content.get("type", "text")
@@ -273,21 +275,21 @@ class MessageService:
                     else:
                         message_content = "Đã gửi tin nhắn"
                 
-                # Gửi push notification
-                await FCMService.send_message_notification(
+                # Gửi push notification cho tất cả users
+                result = await FCMService.send_message_notification(
                     conversation_id=conversation_id,
                     sender_id=sender_id,
                     sender_name=sender_name,
                     sender_avatar=sender_avatar,
                     message_content=message_content,
                     message_type=message_type,
-                    image_url=image_url,
                     conversation_name=conversation_name,
                     is_group=conversation.isGroup,
-                    offline_user_ids=offline_user_ids
+                    offline_user_ids=user_ids_to_notify  # Đổi tên thành user_ids_to_notify
                 )
             except Exception as e:
-                pass
+                import traceback
+                traceback.print_exc()
         
         # Gửi notification trong background (không block response)
         asyncio.create_task(send_push_notifications())

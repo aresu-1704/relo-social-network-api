@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from src.routers import auth_router, user_router, post_router, message_router, notification_router, comment_router
 from src import websocket
 from src.models import init_db
@@ -15,6 +17,24 @@ app = FastAPI(
                 "và quản lý bài viết cá nhân.",
     version="1.1.311025"
 )
+
+# Exception handler cho RequestValidationError (Pydantic validation)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Format lỗi validation cho user-friendly
+    errors = exc.errors()
+    error_messages = []
+    for error in errors:
+        field = " -> ".join(str(loc) for loc in error["loc"])
+        message = error.get("msg", "Validation error")
+        error_messages.append(f"{field}: {message}")
+    
+    detail = "; ".join(error_messages) if error_messages else "Lỗi validation dữ liệu"
+    
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": detail}
+    )
 
 # Kết nối với cơ sở dữ liệu khi khởi động
 @app.on_event("startup")

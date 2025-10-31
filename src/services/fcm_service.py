@@ -2,7 +2,7 @@ import os
 import json
 import base64
 import httpx
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 from google.oauth2 import service_account
 import google.auth.transport.requests
@@ -30,24 +30,6 @@ class FCMService:
         3. GOOGLE_APPLICATION_CREDENTIALS hoặc relo-api.json - fallback
         """
         try:
-            # Ưu tiên 1: Đọc từ base64-encoded JSON (cho Vercel)
-            firebase_creds_base64 = os.getenv("FIREBASE_CREDENTIALS_BASE64")
-            if firebase_creds_base64:
-                try:
-                    # Decode base64
-                    decoded_bytes = base64.b64decode(firebase_creds_base64)
-                    service_account_info = json.loads(decoded_bytes.decode('utf-8'))
-                    
-                    credentials = service_account.Credentials.from_service_account_info(
-                        service_account_info,
-                        scopes=FCMService.FCM_SCOPES
-                    )
-                    return credentials
-                except Exception as e:
-                    print(f"⚠️ Error decoding FIREBASE_CREDENTIALS_BASE64: {e}")
-                    # Continue to next option
-            
-            # Ưu tiên 2: Đọc từ các biến môi trường riêng lẻ (cho local .env)
             project_id = os.getenv("FIREBASE_PROJECT_ID")
             private_key = os.getenv("FIREBASE_PRIVATE_KEY")
             client_email = os.getenv("FIREBASE_CLIENT_EMAIL")
@@ -77,23 +59,6 @@ class FCMService:
                 )
                 return credentials
             
-            # Fallback: Tìm file service account JSON
-            service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-            
-            if not service_account_path:
-                # Fallback: tìm file relo-api.json trong thư mục api
-                current_dir = Path(__file__).parent.parent.parent.parent
-                service_account_path = current_dir / "relo-api.json"
-                if not service_account_path.exists():
-                    # Thử tìm trong thư mục hiện tại
-                    service_account_path = Path("relo-api.json")
-            
-            if service_account_path and Path(service_account_path).exists():
-                credentials = service_account.Credentials.from_service_account_file(
-                    str(service_account_path),
-                    scopes=FCMService.FCM_SCOPES
-                )
-                return credentials
             else:
                 print("⚠️ Firebase service account credentials not found in .env or JSON file")
                 return None
@@ -134,10 +99,11 @@ class FCMService:
         sender_name: Optional[str] = None,
         message_type: Optional[str] = None,
         sender_avatar: Optional[str] = None,
-        image_url: Optional[str] = None,
         conversation_name: Optional[str] = None,
-        is_group: bool = False
-    ) -> List[str]:
+        is_group: bool = False,
+        token_to_user_map: Optional[Dict[str, Any]] = None,
+        screen: Optional[str] = None  # Thêm tham số để chỉ định màn hình cần mở
+    ) -> tuple[List[str], List[str]]:
         """
         Gửi push notification tới danh sách device tokens.
         
@@ -182,51 +148,46 @@ class FCMService:
         failed_tokens = []
         
         # Gửi từng notification (có thể batch sau)
-        for token in device_tokens:
-            # FCM v1 API format
-            # Lưu ý: Reply actions được xử lý ở client-side (local notification)
-            # FCM v1 không hỗ trợ actions trong payload
+        for i, token in enumerate(device_tokens):
+            # FCM v1 API format - DATA ONLY để client tự hiển thị local notification
+            # Không có notification field = Firebase sẽ KHÔNG tự hiển thị
+            # Client sẽ nhận qua onMessage và tự hiển thị local notification với avatar, button reply
             message_payload = {
                 "message": {
                     "token": token,
-                    "notification": {
-                        "title": title,
-                        "body": body
-                    },
+                    # KHÔNG có notification field - để client tự hiển thị local notification
                     "data": {
-                        "type": "message",
+                        "type": message_type or "message",
                         "conversation_id": conversation_id or "",
                         "sender_id": sender_id or "",
                         "sender_name": sender_name or "",
-                        "sender_avatar": str(sender_avatar) if sender_avatar else "",  # Đảm bảo convert thành string
+                        "sender_avatar": str(sender_avatar) if sender_avatar else "",
                         "content_type": message_type or "text",
                         "has_reply": "true" if conversation_id else "false",
                         "conversation_name": conversation_name or "",
                         "is_group": "true" if is_group else "false",
+                        # Thêm title và body vào data để client dùng
+                        "title": title,
+                        "body": body,
+                        # Thêm screen để chỉ định màn hình cần mở
+                        "screen": screen or ("chat" if conversation_id else ""),
                         **{str(k): str(v) for k, v in (data or {}).items()}
                     },
                     "android": {
                         "priority": "high",
-                        "notification": {
-                            "channel_id": "relo_channel",
-                            "sound": "default",
-                            "click_action": "FLUTTER_NOTIFICATION_CLICK",
-                            "image": image_url if image_url else None,
-                            "icon": "ic_launcher",
-                            "color": "#8B38D7"  # Màu theme của app
-                        }
+                        # Không có notification field trong android = data-only message
                     },
                     "apns": {
+                        "headers": {
+                            "apns-priority": "10"
+                        },
                         "payload": {
                             "aps": {
+                                "content-available": 1,  # Background data-only
                                 "sound": "default",
-                                "badge": 1,
-                                "category": "REPLY_CATEGORY" if conversation_id else "DEFAULT_CATEGORY"
+                                "badge": 1
                             }
                         },
-                        "fcm_options": {
-                            "image": image_url if image_url else None
-                        }
                     }
                 }
             }
@@ -239,10 +200,24 @@ class FCMService:
                         successful_tokens.append(token)
                     else:
                         failed_tokens.append(token)
+                        
+                        # Xóa token không hợp lệ (404, 400 với invalid token) khỏi database
+                        if response.status_code in [404, 400]:
+                            response_data = response.json() if response.text else {}
+                            error_code = response_data.get("error", {}).get("code", 0)
+                            error_message = response_data.get("error", {}).get("message", "")
+                            
+                            # 404 hoặc 400 thường có nghĩa token không hợp lệ
+                            if response.status_code == 404 or (response.status_code == 400 and "token" in error_message.lower()):
+                                if token_to_user_map and token in token_to_user_map:
+                                    user = token_to_user_map[token]
+                                    if token in user.deviceTokens:
+                                        user.deviceTokens.remove(token)
+                                        await user.save()
             except Exception as e:
                 failed_tokens.append(token)
         
-        return successful_tokens
+        return successful_tokens, failed_tokens
     
     @staticmethod
     async def send_message_notification(
@@ -253,12 +228,15 @@ class FCMService:
         message_type: str,
         offline_user_ids: List[str],
         sender_avatar: Optional[str] = None,
-        image_url: Optional[str] = None,
         conversation_name: Optional[str] = None,
         is_group: bool = False
     ) -> int:
         """
-        Gửi push notification cho tin nhắn mới tới các users offline.
+        Gửi push notification cho tin nhắn mới tới các users.
+        Client sẽ tự quyết định hiển thị hay không dựa trên app state.
+        
+        Args:
+            offline_user_ids: Danh sách user IDs cần gửi notification (tên cũ giữ lại để backward compatible)
         
         Returns:
             Số lượng notifications đã gửi thành công
@@ -267,7 +245,7 @@ class FCMService:
         if not offline_user_ids:
             return 0
         
-        # Lấy device tokens của các users offline
+        # Lấy device tokens của các users
         from bson import ObjectId
         user_object_ids = [ObjectId(uid) for uid in offline_user_ids if uid]
         
@@ -278,9 +256,13 @@ class FCMService:
             {"_id": {"$in": user_object_ids}}
         ).to_list()
         
+        # Lưu mapping token -> user để xóa token không hợp lệ sau này
+        token_to_user_map = {}
         all_device_tokens = []
         for user in users:
             if user.deviceTokens:
+                for token in user.deviceTokens:
+                    token_to_user_map[token] = user
                 all_device_tokens.extend(user.deviceTokens)
         
         if not all_device_tokens:
@@ -299,8 +281,7 @@ class FCMService:
         if len(body) > 100:
             body = body[:100] + "..."
         
-        # Gửi notification với avatar và image preview
-        successful_tokens = await FCMService.send_notification(
+        successful_tokens, failed_tokens = await FCMService.send_notification(
             device_tokens=all_device_tokens,
             title=title,
             body=body,
@@ -309,9 +290,9 @@ class FCMService:
             sender_name=sender_name,
             message_type=message_type,
             sender_avatar=sender_avatar,
-            image_url=image_url,
             conversation_name=conversation_name,
-            is_group=is_group
+            is_group=is_group,
+            token_to_user_map=token_to_user_map
         )
         
         return len(successful_tokens)
@@ -345,16 +326,20 @@ class FCMService:
             {"_id": {"$in": user_object_ids}}
         ).to_list()
         
+        # Lưu mapping token -> user để xóa token không hợp lệ sau này
+        token_to_user_map = {}
         all_device_tokens = []
         for user in users:
             if user.deviceTokens:
+                for token in user.deviceTokens:
+                    token_to_user_map[token] = user
                 all_device_tokens.extend(user.deviceTokens)
         
         if not all_device_tokens:
             return 0
         
         # Gửi notification
-        successful_tokens = await FCMService.send_notification(
+        successful_tokens, _ = await FCMService.send_notification(
             device_tokens=all_device_tokens,
             title=title,
             body=body,
@@ -362,6 +347,67 @@ class FCMService:
             data={
                 "notification_type": notification_type,
                 **(metadata or {})
+            },
+            token_to_user_map=token_to_user_map
+        )
+        
+        return len(successful_tokens)
+    
+    @staticmethod
+    async def send_friend_request_notification(
+        from_user_id: str,
+        from_user_name: str,
+        from_user_avatar: Optional[str],
+        to_user_id: str
+    ) -> int:
+        """
+        Gửi push notification khi có lời mời kết bạn mới.
+        
+        Args:
+            from_user_id: ID của người gửi lời mời
+            from_user_name: Tên hiển thị của người gửi
+            from_user_avatar: Avatar URL của người gửi
+            to_user_id: ID của người nhận lời mời
+        
+        Returns:
+            Số lượng notifications đã gửi thành công
+        """
+        # Lấy device tokens của người nhận
+        from bson import ObjectId
+        try:
+            to_user_object_id = ObjectId(to_user_id)
+        except:
+            return 0
+        
+        to_user = await User.get(to_user_object_id)
+        if not to_user or not to_user.deviceTokens:
+            return 0
+        
+        # Tạo token mapping
+        token_to_user_map = {}
+        for token in to_user.deviceTokens:
+            token_to_user_map[token] = to_user
+        
+        title = "Bạn có một lời mời kết bạn"
+        body = "Bạn có một lời mời kết bạn"
+        
+        successful_tokens, failed_tokens = await FCMService.send_notification(
+            device_tokens=to_user.deviceTokens,
+            title=title,
+            body=body,
+            conversation_id=None,
+            sender_id=from_user_id,
+            sender_name=from_user_name,
+            message_type="friend_request",
+            sender_avatar=from_user_avatar,
+            conversation_name=None,
+            is_group=False,
+            token_to_user_map=token_to_user_map,
+            screen="friend_requests",
+            data={
+                "type": "friend_request",
+                "from_user_id": from_user_id,
+                "from_user_name": from_user_name,
             }
         )
         
