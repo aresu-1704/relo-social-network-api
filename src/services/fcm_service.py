@@ -22,32 +22,12 @@ class FCMService:
     
     @staticmethod
     def _load_service_account() -> Optional[service_account.Credentials]:
-        """Load Firebase service account credentials từ environment variables hoặc file JSON
-        
-        Thứ tự ưu tiên:
-        1. FIREBASE_CREDENTIALS_BASE64 (base64-encoded JSON) - cho Vercel deployment
-        2. FIREBASE_* individual env vars - cho local development với .env
-        3. GOOGLE_APPLICATION_CREDENTIALS hoặc relo-api.json - fallback
         """
+        Load Firebase service account credentials từ environment variables hoặc file JSON
+
+        """
+
         try:
-            # Ưu tiên 1: Đọc từ base64-encoded JSON (cho Vercel)
-            firebase_creds_base64 = os.getenv("FIREBASE_CREDENTIALS_BASE64")
-            if firebase_creds_base64:
-                try:
-                    # Decode base64
-                    decoded_bytes = base64.b64decode(firebase_creds_base64)
-                    service_account_info = json.loads(decoded_bytes.decode('utf-8'))
-                    
-                    credentials = service_account.Credentials.from_service_account_info(
-                        service_account_info,
-                        scopes=FCMService.FCM_SCOPES
-                    )
-                    return credentials
-                except Exception as e:
-                    print(f"⚠️ Error decoding FIREBASE_CREDENTIALS_BASE64: {e}")
-                    # Continue to next option
-            
-            # Ưu tiên 2: Đọc từ các biến môi trường riêng lẻ (cho local .env)
             project_id = os.getenv("FIREBASE_PROJECT_ID")
             private_key = os.getenv("FIREBASE_PRIVATE_KEY")
             client_email = os.getenv("FIREBASE_CLIENT_EMAIL")
@@ -76,27 +56,7 @@ class FCMService:
                     scopes=FCMService.FCM_SCOPES
                 )
                 return credentials
-            
-            # Fallback: Tìm file service account JSON
-            service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-            
-            if not service_account_path:
-                # Fallback: tìm file relo-api.json trong thư mục api
-                current_dir = Path(__file__).parent.parent.parent.parent
-                service_account_path = current_dir / "relo-api.json"
-                if not service_account_path.exists():
-                    # Thử tìm trong thư mục hiện tại
-                    service_account_path = Path("relo-api.json")
-            
-            if service_account_path and Path(service_account_path).exists():
-                credentials = service_account.Credentials.from_service_account_file(
-                    str(service_account_path),
-                    scopes=FCMService.FCM_SCOPES
-                )
-                return credentials
-            else:
-                print("⚠️ Firebase service account credentials not found in .env or JSON file")
-                return None
+
         except Exception as e:
             print(f"⚠️ Error loading Firebase service account: {e}")
             return None
@@ -213,7 +173,8 @@ class FCMService:
                             "click_action": "FLUTTER_NOTIFICATION_CLICK",
                             "image": image_url if image_url else None,
                             "icon": "ic_launcher",
-                            "color": "#8B38D7"  # Màu theme của app
+                            "color": "#8B38D7",  # Màu theme của app
+                            "tag": conversation_id if conversation_id else None  # Group notifications theo conversation_id
                         }
                     },
                     "apns": {
