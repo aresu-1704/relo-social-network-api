@@ -147,7 +147,34 @@ class MessageService:
             raise ValueError("Không tìm thấy cuộc trò chuyện.")
 
         if sender_id not in [p.userId for p in conversation.participants]:
-            raise PermissionError("Người gửi không thuộc cuộc trò chuyện này.");
+            raise PermissionError("Người gửi không thuộc cuộc trò chuyện này.")
+
+        # Kiểm tra block status cho chat 1-1: không cho gửi tin nhắn tới người dùng bị chặn
+        if not conversation.isGroup:
+            # Lấy người nhận (người còn lại trong conversation)
+            other_participant_id = next(
+                (p.userId for p in conversation.participants if p.userId != sender_id),
+                None
+            )
+            
+            if other_participant_id:
+                # Kiểm tra xem người nhận có bị chặn bởi sender không
+                try:
+                    block_status = await UserService.check_block_status(
+                        sender_id,
+                        other_participant_id
+                    )
+                    # Nếu sender đã chặn người nhận, không cho gửi tin nhắn
+                    if block_status.get("isBlockedByMe", False):
+                        raise PermissionError("Không thể gửi tin nhắn tới người dùng đã bị chặn.")
+                except PermissionError:
+                    # Re-raise PermissionError để client nhận được lỗi rõ ràng
+                    raise
+                except Exception as e:
+                    # Nếu có lỗi khác khi check block status, cho phép gửi (fail-safe)
+                    # Nhưng log để debug
+                    import logging
+                    logging.warning(f"Error checking block status: {e}")
 
         if files:
             if content['type'] == 'audio' or content['type'] == 'file':
@@ -190,12 +217,18 @@ class MessageService:
         # Kiểm tra nếu sender đã bị xóa
         is_sender_deleted = not sender or sender.status == 'deleted'
 
+        # Lấy thông tin sender name để gửi trong WebSocket payload
+        sender_name = "Người dùng"  # Default
+        if sender and not is_sender_deleted:
+            sender_name = sender.displayName or sender.username or "Người dùng"
+        
         # Phát broadcast tin nhắn mới
         message_data = {
             "id": str(message.id),
             "senderId": sender_id if sender_id in ['system', 'deleted'] else ("deleted" if is_sender_deleted else str(sender.id)),
             "conversationId": message.conversationId,
             "avatarUrl": None if (sender_id in ['system', 'deleted'] or is_sender_deleted) else sender.avatarUrl,
+            "senderName": sender_name,  # Thêm senderName vào message_data
             "content": message.content,
             "createdAt": message.createdAt.isoformat()
         }
@@ -214,7 +247,7 @@ class MessageService:
         ]
         await asyncio.gather(*tasks)
 
-        # Gửi push notification cho users offline không tắt thông báo
+        # Gửi push notification cho TẤT CẢ participants không tắt thông báo
         async def send_push_notifications():
             try:
                 # Lấy danh sách participants không tắt thông báo và không phải sender
@@ -226,12 +259,12 @@ class MessageService:
                 if not participants_to_notify:
                     return
                 
-                offline_user_ids = manager.get_offline_users(participants_to_notify)
-                if not offline_user_ids:
-                    return
+                # Gửi cho TẤT CẢ participants không mute (không chỉ offline)
+                # FCM sẽ xử lý việc chỉ hiển thị khi app ở background/terminated
+                all_user_ids = participants_to_notify
                 
                 # Lấy thông tin sender để hiển thị
-                sender_name = "Người dùng"  # Default
+                sender_name = "Người dùng không rõ"  # Default
                 sender_avatar = None
                 if sender and not is_sender_deleted:
                     sender_name = sender.displayName or sender.username
@@ -258,6 +291,7 @@ class MessageService:
                 # Lấy message content
                 message_content = ""
                 message_type = "text"
+                image_url = None
 
                 if isinstance(message.content, dict):
                     content_type = message.content.get("type", "text")
@@ -266,6 +300,12 @@ class MessageService:
                         message_content = message.content.get("text", "")
                     elif content_type == "media":
                         message_content = "[Media] Đã gửi đa phương tiện"
+                        # Lấy URL ảnh đầu tiên nếu có
+                        urls = message.content.get("urls", [])
+                        if urls and len(urls) > 0:
+                            image_url = urls[0]
+                        elif message.content.get("url"):
+                            image_url = message.content.get("url")
                     elif content_type == "audio":
                         message_content = "[Voice Message] Đã gửi tin nhắn thoại"
                     elif content_type == "file":
@@ -273,7 +313,7 @@ class MessageService:
                     else:
                         message_content = "Đã gửi tin nhắn"
                 
-                # Gửi push notification
+                # Gửi push notification cho tất cả users không mute
                 await FCMService.send_message_notification(
                     conversation_id=conversation_id,
                     sender_id=sender_id,
@@ -284,7 +324,7 @@ class MessageService:
                     image_url=image_url,
                     conversation_name=conversation_name,
                     is_group=conversation.isGroup,
-                    offline_user_ids=offline_user_ids
+                    offline_user_ids=all_user_ids  # Gửi cho tất cả, không chỉ offline
                 )
             except Exception as e:
                 pass
