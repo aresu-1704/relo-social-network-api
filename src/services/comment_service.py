@@ -45,7 +45,7 @@ class CommentService:
             async def create_comment_notification():
                 from ..services.notification_service import NotificationService
                 
-                await NotificationService.create_notification(
+                notification = await NotificationService.create_notification(
                     user_id=post.authorId,
                     notification_type="post_comment",
                     title="Có người bình luận bài viết của bạn",
@@ -63,6 +63,7 @@ class CommentService:
                 notification_payload = {
                     "type": "post_comment",
                     "payload": {
+                        "id": str(notification.id),
                         "userId": str(author.id),
                         "userDisplayName": author.displayName,
                         "userAvatarUrl": author.avatarUrl,

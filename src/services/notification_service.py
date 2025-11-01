@@ -1,8 +1,6 @@
 from datetime import datetime
 from typing import List, Optional
 from ..models import Notification
-from ..models import User
-from bson import ObjectId
 
 
 class NotificationService:

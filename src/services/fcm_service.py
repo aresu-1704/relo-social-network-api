@@ -99,6 +99,7 @@ class FCMService:
         sender_name: Optional[str] = None,
         message_type: Optional[str] = None,
         sender_avatar: Optional[str] = None,
+        conversation_avatar: Optional[str] = None,
         conversation_name: Optional[str] = None,
         is_group: bool = False,
         token_to_user_map: Optional[Dict[str, Any]] = None,
@@ -125,7 +126,6 @@ class FCMService:
         
         access_token = await FCMService._get_access_token()
         if not access_token:
-            print("⚠️ FCM access token not available, skipping push notification")
             return []
         
         # Lấy project_id từ credentials
@@ -134,7 +134,6 @@ class FCMService:
             project_id = FCMService._credentials.project_id
         
         if not project_id:
-            print("⚠️ FCM project_id not available")
             return []
         
         # Sử dụng FCM HTTP v1 API với OAuth2 token
@@ -165,10 +164,15 @@ class FCMService:
                         "content_type": message_type or "text",
                         "has_reply": "true" if conversation_id else "false",
                         "conversation_name": conversation_name or "",
+                        "conversation_avatar": str(conversation_avatar) if conversation_avatar else "",
+                        # Flag quan trọng: phân biệt chat nhóm và chat 1-1
+                        # "true" = chat nhóm, "false" = chat 1-1
                         "is_group": "true" if is_group else "false",
-                        # Thêm title và body vào data để client dùng
                         "title": title,
                         "body": body,
+                        # Thông tin thành viên cho chat nhóm (sẽ được ghi đè từ data nếu có)
+                        "member_ids": "",
+                        "member_count": "0",
                         # Thêm screen để chỉ định màn hình cần mở
                         "screen": screen or ("chat" if conversation_id else ""),
                         **{str(k): str(v) for k, v in (data or {}).items()}
@@ -229,34 +233,23 @@ class FCMService:
         offline_user_ids: List[str],
         sender_avatar: Optional[str] = None,
         conversation_name: Optional[str] = None,
-        is_group: bool = False
+        is_group: bool = False,
+        group_avatar_url: Optional[str] = None,
+        member_ids: Optional[List[str]] = None,
     ) -> int:
         """
-        Gửi push notification cho tin nhắn mới tới các users.
-        Client sẽ tự quyết định hiển thị hay không dựa trên app state.
-        
-        Args:
-            offline_user_ids: Danh sách user IDs cần gửi notification (tên cũ giữ lại để backward compatible)
-        
-        Returns:
-            Số lượng notifications đã gửi thành công
+        Gửi push notification cho tin nhắn mới tới các users offline.
         """
-        
         if not offline_user_ids:
             return 0
-        
-        # Lấy device tokens của các users
+
         from bson import ObjectId
         user_object_ids = [ObjectId(uid) for uid in offline_user_ids if uid]
-        
         if not user_object_ids:
             return 0
-        
-        users = await User.find(
-            {"_id": {"$in": user_object_ids}}
-        ).to_list()
-        
-        # Lưu mapping token -> user để xóa token không hợp lệ sau này
+
+        users = await User.find({"_id": {"$in": user_object_ids}}).to_list()
+
         token_to_user_map = {}
         all_device_tokens = []
         for user in users:
@@ -264,24 +257,56 @@ class FCMService:
                 for token in user.deviceTokens:
                     token_to_user_map[token] = user
                 all_device_tokens.extend(user.deviceTokens)
-        
+
         if not all_device_tokens:
             return 0
-        
-        # Format title và body theo style Zalo
-        # Title: Tên người gửi hoặc tên nhóm
-        if is_group and conversation_name:
-            title = conversation_name
-            body = f"{sender_name}: {message_content}"
+
+        # --- Format thông tin hiển thị ---
+        # PHÂN BIỆT CHAT NHÓM VÀ CHAT 1-1:
+        # - Chat nhóm (is_group=True): 
+        #   + Title = tên nhóm (hoặc "Cuộc trò chuyện")
+        #   + Body = "Tên người gửi: Nội dung"
+        #   + Avatar = conversation_avatar (ảnh nhóm)
+        # - Chat 1-1 (is_group=False):
+        #   + Title = tên người gửi
+        #   + Body = nội dung tin nhắn
+        #   + Avatar = sender_avatar (ảnh người gửi), KHÔNG dùng conversation_avatar
+        if is_group:
+            # CHAT NHÓM: hiển thị tên nhóm và avatar nhóm
+            # Đảm bảo có tên nhóm (fallback "Cuộc trò chuyện")
+            final_conversation_name = (
+                conversation_name.strip()
+                if conversation_name and conversation_name.strip()
+                else "Cuộc trò chuyện"
+            )
+            title = final_conversation_name
+            body = f"{sender_name}: {message_content}"  # Thêm tên người gửi vào body
+            avatar_to_use = group_avatar_url  # Ảnh nhóm (có thể None)
         else:
-            title = sender_name
-            body = message_content
-        
-        # Rút gọn body nếu quá dài
+            # CHAT 1-1: hiển thị tên người gửi và avatar người gửi
+            title = sender_name if sender_name and sender_name.strip() else "Người dùng"
+            body = message_content  # Chỉ nội dung tin nhắn, không có tên người gửi
+            avatar_to_use = None  # Chat 1-1 KHÔNG dùng conversation_avatar, chỉ dùng sender_avatar
+
+        # Rút gọn body cho an toàn
         if len(body) > 100:
             body = body[:100] + "..."
+
+        # Đảm bảo conversation_name không None
+        final_conversation_name_to_send = (
+            final_conversation_name if is_group 
+            else (conversation_name or "")
+        )
+
+        # Chuẩn bị data payload với member_ids và member_count
+        additional_data = None
+        if is_group and member_ids:
+            additional_data = {
+                "member_ids": ",".join(member_ids),
+                "member_count": str(len(member_ids))
+            }
         
-        successful_tokens, failed_tokens = await FCMService.send_notification(
+        successful_tokens = await FCMService.send_notification(
             device_tokens=all_device_tokens,
             title=title,
             body=body,
@@ -290,12 +315,15 @@ class FCMService:
             sender_name=sender_name,
             message_type=message_type,
             sender_avatar=sender_avatar,
-            conversation_name=conversation_name,
+            conversation_name=final_conversation_name_to_send,
+            conversation_avatar=avatar_to_use,  # Ảnh nhóm nếu group (có thể None), None nếu 1-1
             is_group=is_group,
-            token_to_user_map=token_to_user_map
+            token_to_user_map=token_to_user_map,
+            data=additional_data,
         )
-        
+
         return len(successful_tokens)
+        
     
     @staticmethod
     async def send_group_notification(
@@ -388,8 +416,8 @@ class FCMService:
         for token in to_user.deviceTokens:
             token_to_user_map[token] = to_user
         
-        title = "Bạn có một lời mời kết bạn"
-        body = "Bạn có một lời mời kết bạn"
+        title = "Lời mời kết bạn"
+        body = f"{from_user_name} muốn kết bạn với bạn"
         
         successful_tokens, failed_tokens = await FCMService.send_notification(
             device_tokens=to_user.deviceTokens,

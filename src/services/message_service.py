@@ -232,18 +232,24 @@ class MessageService:
                 user_ids_to_notify = participants_to_notify
                 
                 # Lấy thông tin sender để hiển thị
-                sender_name = "Người dùng không xác định"
+                sender_name = ""
                 sender_avatar = None
                 if sender and not is_sender_deleted:
-                    sender_name = sender.displayName or sender.username
+                    # Fallback sang username nếu displayName không có
+                    sender_name = sender.displayName or sender.username or "Người dùng"
                     sender_avatar = sender.avatarUrl
+                else:
+                    # Nếu sender không tồn tại, vẫn có tên mặc định
+                    sender_name = "Người dùng"
                 
                 # Lấy thông tin conversation
                 conversation_name = None
+                group_avatar_url = None
                 if conversation.isGroup:
-                    conversation_name = conversation.name or "Nhóm"
+                    conversation_name = conversation.name if conversation.name and conversation.name.strip() else None
+                    # Lấy ảnh nhóm nếu có
+                    group_avatar_url = conversation.avatarUrl if conversation.avatarUrl else None
                 else:
-                    # Nếu là chat 1-1, tìm tên của người kia
                     other_participant_id = next(
                         (p.userId for p in conversation.participants if p.userId != sender_id),
                         None
@@ -252,14 +258,14 @@ class MessageService:
                         try:
                             other_user = await User.get(other_participant_id)
                             if other_user:
-                                conversation_name = other_user.displayName or other_user.username
+                                # Fallback sang username nếu displayName không có
+                                conversation_name = other_user.displayName or other_user.username or "Người dùng"
                         except:
                             pass
                 
                 # Lấy message content
                 message_content = ""
                 message_type = "text"
-                image_url = None  # Khởi tạo image_url
 
                 if isinstance(message.content, dict):
                     content_type = message.content.get("type", "text")
@@ -275,8 +281,13 @@ class MessageService:
                     else:
                         message_content = "Đã gửi tin nhắn"
                 
+                # Lấy danh sách member IDs cho chat nhóm
+                member_ids = None
+                if conversation.isGroup:
+                    member_ids = [p.userId for p in conversation.participants]
+                
                 # Gửi push notification cho tất cả users
-                result = await FCMService.send_message_notification(
+                await FCMService.send_message_notification(
                     conversation_id=conversation_id,
                     sender_id=sender_id,
                     sender_name=sender_name,
@@ -285,13 +296,14 @@ class MessageService:
                     message_type=message_type,
                     conversation_name=conversation_name,
                     is_group=conversation.isGroup,
-                    offline_user_ids=user_ids_to_notify  # Đổi tên thành user_ids_to_notify
+                    offline_user_ids=user_ids_to_notify,
+                    group_avatar_url=group_avatar_url,
+                    member_ids=member_ids
                 )
             except Exception as e:
                 import traceback
                 traceback.print_exc()
         
-        # Gửi notification trong background (không block response)
         asyncio.create_task(send_push_notifications())
 
         return message

@@ -263,7 +263,7 @@ class PostService:
                 
                 # Create notification in background
                 async def create_reaction_notification():
-                    await NotificationService.create_notification(
+                    notification = await NotificationService.create_notification(
                         user_id=post.authorId,
                         notification_type="post_reaction",
                         title="Có người thích bài viết của bạn",
@@ -281,6 +281,7 @@ class PostService:
                     notification_payload = {
                         "type": "post_reaction",
                         "payload": {
+                            "id": str(notification.id),
                             "userId": str(user.id),
                             "userDisplayName": user.displayName,
                             "userAvatarUrl": user.avatarUrl,

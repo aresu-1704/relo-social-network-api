@@ -49,10 +49,25 @@ class UserService:
         new_request = FriendRequest(fromUserId=from_user_id, toUserId=to_user_id)
         await new_request.save()
 
+        # Lưu notification vào database trước để có ID thật
+        notification = await NotificationService.create_notification(
+            user_id=to_user_id,
+            notification_type="friend_request",
+            title="Lời mời kết bạn",
+            message=f"{from_user.displayName or from_user.username} muốn kết bạn với bạn",
+            metadata={
+                "request_id": str(new_request.id),
+                "from_user_id": str(from_user.id),
+                "displayName": from_user.displayName,
+                "avatarUrl": from_user.avatarUrl
+            }
+        )
+
         # Gửi thông báo real-time đến người nhận yêu cầu
         notification_payload = {
             "type": "friend_request_received",
             "payload": {
+                "id": str(notification.id),
                 "request_id": str(new_request.id),
                 "from_user_id": str(from_user.id),
                 "displayName": from_user.displayName,
@@ -139,8 +154,8 @@ class UserService:
             # Xóa friend request khỏi database sau khi đã chấp nhận
             await friend_request.delete()
             
-            # Tạo notification cho người gửi yêu cầu (người được chấp nhận)
-            await NotificationService.create_notification(
+            # Tạo notification cho người gửi yêu cầu (người được chấp nhận) trước
+            notification_accepted = await NotificationService.create_notification(
                 user_id=friend_request.fromUserId,
                 notification_type="friend_request_accepted",
                 title="Đã chấp nhận lời mời kết bạn",
@@ -153,7 +168,8 @@ class UserService:
             notification_payload_from = {
                 "type": "friend_request_accepted",
                 "payload": {
-                    "user_id": str(to_user.id),
+                    "id": str(notification_accepted.id),
+                    "userId": str(to_user.id),
                     "displayName": to_user.displayName,
                     "avatarUrl": to_user.avatarUrl
                 }
@@ -163,10 +179,19 @@ class UserService:
             )
             
             # Gửi cho người chấp nhận
+            notification_added = await NotificationService.create_notification(
+                user_id=str(to_user.id),
+                notification_type="friend_added",
+                title="Đã kết bạn",
+                message=f"Bạn và {from_user.displayName} đã trở thành bạn bè",
+                metadata={"userId": str(from_user.id), "displayName": from_user.displayName, "avatarUrl": from_user.avatarUrl}
+            )
+            
             notification_payload_to = {
                 "type": "friend_added",
                 "payload": {
-                    "user_id": str(from_user.id),
+                    "id": str(notification_added.id),
+                    "userId": str(from_user.id),
                     "displayName": from_user.displayName,
                     "avatarUrl": from_user.avatarUrl
                 }
