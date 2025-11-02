@@ -436,7 +436,7 @@ class MessageService:
                         UserPublic(
                             id=participant_info.userId,
                             username="deleted",
-                            email="",
+                            email="deleted@deleted.com",
                             displayName="Tài khoản không tồn tại",
                             avatarUrl=None,
                             backgroundUrl=None,

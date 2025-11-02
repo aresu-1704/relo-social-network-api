@@ -78,17 +78,20 @@ class UserService:
             manager.broadcast_to_user(to_user_id, notification_payload)
         )
 
-        # Gửi push notification cho friend request
+        # Gửi push notification cho friend request (chỉ khi user offline)
+        # Nếu user đang online, đã nhận qua WebSocket rồi
         async def send_friend_request_notification():
             try:
-                from ..services.fcm_service import FCMService
-                sender_name = from_user.displayName or from_user.username
-                await FCMService.send_friend_request_notification(
-                    from_user_id=str(from_user.id),
-                    from_user_name=sender_name,
-                    from_user_avatar=from_user.avatarUrl,
-                    to_user_id=to_user_id
-                )
+                # Chỉ gửi push notification nếu user OFFLINE
+                if not manager.is_user_online(to_user_id):
+                    from ..services.fcm_service import FCMService
+                    sender_name = from_user.displayName or from_user.username
+                    await FCMService.send_friend_request_notification(
+                        from_user_id=str(from_user.id),
+                        from_user_name=sender_name,
+                        from_user_avatar=from_user.avatarUrl,
+                        to_user_id=to_user_id
+                    )
             except Exception as e:
                 import traceback
                 traceback.print_exc()
