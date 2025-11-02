@@ -147,7 +147,34 @@ class MessageService:
             raise ValueError("Không tìm thấy cuộc trò chuyện.")
 
         if sender_id not in [p.userId for p in conversation.participants]:
-            raise PermissionError("Người gửi không thuộc cuộc trò chuyện này.");
+            raise PermissionError("Người gửi không thuộc cuộc trò chuyện này.")
+
+        # Kiểm tra block status cho chat 1-1: không cho gửi tin nhắn tới người dùng bị chặn
+        if not conversation.isGroup:
+            # Lấy người nhận (người còn lại trong conversation)
+            other_participant_id = next(
+                (p.userId for p in conversation.participants if p.userId != sender_id),
+                None
+            )
+            
+            if other_participant_id:
+                # Kiểm tra xem người nhận có bị chặn bởi sender không
+                try:
+                    block_status = await UserService.check_block_status(
+                        sender_id,
+                        other_participant_id
+                    )
+                    # Nếu sender đã chặn người nhận, không cho gửi tin nhắn
+                    if block_status.get("isBlockedByMe", False):
+                        raise PermissionError("Không thể gửi tin nhắn tới người dùng đã bị chặn.")
+                except PermissionError:
+                    # Re-raise PermissionError để client nhận được lỗi rõ ràng
+                    raise
+                except Exception as e:
+                    # Nếu có lỗi khác khi check block status, cho phép gửi (fail-safe)
+                    # Nhưng log để debug
+                    import logging
+                    logging.warning(f"Error checking block status: {e}")
 
         if files:
             if content['type'] == 'audio' or content['type'] == 'file':
@@ -190,12 +217,18 @@ class MessageService:
         # Kiểm tra nếu sender đã bị xóa
         is_sender_deleted = not sender or sender.status == 'deleted'
 
+        # Lấy thông tin sender name để gửi trong WebSocket payload
+        sender_name = "Người dùng"  # Default
+        if sender and not is_sender_deleted:
+            sender_name = sender.displayName or sender.username or "Người dùng"
+        
         # Phát broadcast tin nhắn mới
         message_data = {
             "id": str(message.id),
             "senderId": sender_id if sender_id in ['system', 'deleted'] else ("deleted" if is_sender_deleted else str(sender.id)),
             "conversationId": message.conversationId,
             "avatarUrl": None if (sender_id in ['system', 'deleted'] or is_sender_deleted) else sender.avatarUrl,
+            "senderName": sender_name,  # Thêm senderName vào message_data
             "content": message.content,
             "createdAt": message.createdAt.isoformat()
         }
@@ -266,6 +299,7 @@ class MessageService:
                 # Lấy message content
                 message_content = ""
                 message_type = "text"
+                image_url = None
 
                 if isinstance(message.content, dict):
                     content_type = message.content.get("type", "text")
@@ -274,6 +308,12 @@ class MessageService:
                         message_content = message.content.get("text", "")
                     elif content_type == "media":
                         message_content = "[Media] Đã gửi đa phương tiện"
+                        # Lấy URL ảnh đầu tiên nếu có
+                        urls = message.content.get("urls", [])
+                        if urls and len(urls) > 0:
+                            image_url = urls[0]
+                        elif message.content.get("url"):
+                            image_url = message.content.get("url")
                     elif content_type == "audio":
                         message_content = "[Voice Message] Đã gửi tin nhắn thoại"
                     elif content_type == "file":

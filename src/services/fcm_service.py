@@ -22,13 +22,11 @@ class FCMService:
     
     @staticmethod
     def _load_service_account() -> Optional[service_account.Credentials]:
-        """Load Firebase service account credentials từ environment variables hoặc file JSON
-        
-        Thứ tự ưu tiên:
-        1. FIREBASE_CREDENTIALS_BASE64 (base64-encoded JSON) - cho Vercel deployment
-        2. FIREBASE_* individual env vars - cho local development với .env
-        3. GOOGLE_APPLICATION_CREDENTIALS hoặc relo-api.json - fallback
         """
+        Load Firebase service account credentials từ environment variables hoặc file JSON
+
+        """
+
         try:
             project_id = os.getenv("FIREBASE_PROJECT_ID")
             private_key = os.getenv("FIREBASE_PRIVATE_KEY")
@@ -59,9 +57,6 @@ class FCMService:
                 )
                 return credentials
             
-            else:
-                print("⚠️ Firebase service account credentials not found in .env or JSON file")
-                return None
         except Exception as e:
             print(f"⚠️ Error loading Firebase service account: {e}")
             return None
