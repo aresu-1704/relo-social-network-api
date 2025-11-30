@@ -2,7 +2,7 @@
 
 Backend API cho mạng xã hội nhắn tin trực tuyến **Relo**. Hệ thống hỗ trợ đăng ký, đăng nhập, kết bạn, nhắn tin thời gian thực, quản lý bài viết cá nhân và thông báo đẩy.
 
-## 🌟 Tính năng
+## Tính năng
 
 - **Xác thực người dùng**: Đăng ký, đăng nhập, đăng xuất, quên mật khẩu (OTP), đổi email
 - **Quản lý người dùng**: Thông tin cá nhân, ảnh đại diện, ảnh bìa, trạng thái hoạt động
@@ -11,7 +11,7 @@ Backend API cho mạng xã hội nhắn tin trực tuyến **Relo**. Hệ thốn
 - **Bài viết**: Tạo, sửa, xóa bài viết, thêm hình ảnh (Cloudinary), tìm kiếm
 - **Thông báo**: Push notifications qua FCM, thông báo đa thiết bị
 
-## 🛠️ Công nghệ
+## Công nghệ sử dụng
 
 - **Framework**: FastAPI
 - **Database**: MongoDB (sử dụng Beanie ODM)
@@ -21,7 +21,7 @@ Backend API cho mạng xã hội nhắn tin trực tuyến **Relo**. Hệ thốn
 - **Notifications**: Firebase Cloud Messaging (FCM)
 - **Email**: SMTP cho OTP verification
 
-## 📋 Yêu cầu hệ thống
+## Yêu cầu hệ thống
 
 - Python 3.8+
 - MongoDB (local hoặc cloud)
@@ -29,7 +29,7 @@ Backend API cho mạng xã hội nhắn tin trực tuyến **Relo**. Hệ thốn
 - Cloudinary account
 - Email SMTP server
 
-## 🚀 Cài đặt
+## Cài đặt
 
 ### 1. Clone repository
 
@@ -122,7 +122,7 @@ uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
 Server sẽ chạy tại: `http://localhost:8000`
 
-## 📚 API Documentation
+## API Documentation
 
 ### Swagger UI
 Truy cập: `http://localhost:8000/docs`
@@ -130,7 +130,7 @@ Truy cập: `http://localhost:8000/docs`
 ### ReDoc
 Truy cập: `http://localhost:8000/redoc`
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Xác thực (`/api/auth`)
 - `POST /api/auth/register` - Đăng ký người dùng mới
@@ -185,7 +185,7 @@ Truy cập: `http://localhost:8000/redoc`
 - `PUT /api/notifications/{notification_id}/read` - Đánh dấu đã đọc
 - `GET /api/notifications/unread-count` - Lấy số thông báo chưa đọc
 
-## 🔐 Authentication
+## Authentication
 
 API sử dụng JWT Bearer tokens. Để truy cập các endpoint được bảo vệ:
 
@@ -193,7 +193,7 @@ API sử dụng JWT Bearer tokens. Để truy cập các endpoint được bảo
 2. Gửi access token trong header: `Authorization: Bearer <access_token>`
 3. Khi access token hết hạn, sử dụng refresh token tại `/api/auth/refresh` để lấy access token mới
 
-## 📦 Cấu trúc thư mục
+## Cấu trúc thư mục
 
 ```
 Relo-Social-Network-API/
@@ -244,23 +244,23 @@ Relo-Social-Network-API/
 └── README.md                  # File này
 ```
 
-## 🧪 Testing
+## Testing
 
 Xem API documentation tại Swagger UI (`http://localhost:8000/docs`) để test các endpoints trực tiếp.
 
-## 📝 License
+## License
 
 Creative Commons CC0 1.0 Universal - Xem file [LICENSE](LICENSE) để biết thêm chi tiết.
 
-## 🤝 Đóng góp
+## Đóng góp
 
 Mọi đóng góp đều được chào đón! Vui lòng tạo Pull Request hoặc mở Issue để thảo luận.
 
-## 👤 Tác giả
+## Tác giả
 
 - **Relo Team**
 
-## 📞 Liên hệ
+## Liên hệ
 
 Nếu có câu hỏi hoặc cần hỗ trợ, vui lòng mở một Issue trên GitHub.
 
